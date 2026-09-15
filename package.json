@@ -1,0 +1,55 @@
+{
+  "name": "blogauto-naver-tistory",
+  "version": "0.1.0",
+  "description": "Windows desktop automation console for Naver Blog publishing through codex.cmd.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:runtime": "set BLOGAUTO_RUNTIME_ROOT=%CD%\\dist\\runtime&& electron .",
+    "start:runtime:autorun": "set BLOGAUTO_RUNTIME_ROOT=%CD%\\dist\\runtime&& set BLOGAUTO_AUTOSTART=1&& electron .",
+    "run:saved": "node scripts/run-saved-job.js",
+    "publish:latest": "node scripts/publish-latest-job.js",
+    "check": "node scripts/check.js",
+    "check:file-parser": "node scripts/check-file-parser.js",
+    "dist": "electron-builder --win portable && node scripts/prepare-dist-runtime.js"
+  },
+  "build": {
+    "appId": "com.local.blogauto.naver",
+    "productName": "Naver Blog Automator",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "runtime-template",
+        "to": "runtime"
+      },
+      {
+        "from": "src/lib/register-scheduler.ps1",
+        "to": "register-scheduler.ps1"
+      }
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "Naver-Blog-Automator-${version}.${ext}"
+    }
+  },
+  "dependencies": {
+    "jszip": "^3.10.2",
+    "mammoth": "^1.12.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.3.289",
+    "playwright-core": "^1.45.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}
