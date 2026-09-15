@@ -110,6 +110,16 @@ AI 업계동향, 기술 발표, 모델 출시, 반도체 시장 변화 같은 �
 
 ## 실행
 
+### GitHub에서 받는 방법
+
+GitHub의 `Code → Download ZIP`은 소스코드만 받는 방식입니다. 이 ZIP을 바로 더블클릭해 실행할 수는 없습니다.
+
+- 초보 사용자: GitHub의 `Releases`에서 최신 `Naver-Blog-Automator-*.exe`를 다운로드해 실행합니다.
+- 개발자: 소스 ZIP을 받은 뒤 `npm install` 후 `npm start`로 실행합니다.
+- 최신 실행파일을 직접 만들려면 아래 `npm run dist`를 사용합니다.
+
+현재 UI의 `오류 지점부터 이어하기`, `오류 해결 프롬프트(선택)`, `중단 지점부터 재개`, `오류 유형 및 적용한 해결 방향`은 최신 소스와 최신 Release 실행파일에 포함되어야 합니다. 이전 EXE를 실행하면 이 기능이 보이지 않을 수 있습니다.
+
 ```bash
 npm install
 npm start
