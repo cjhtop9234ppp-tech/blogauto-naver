@@ -1,4 +1,5 @@
 const path = require("node:path");
+const fs = require("node:fs");
 const {
   MEMBER_BOARD_WRITE_URL,
   MEMBER_BOARD_AUTO_TITLE_PREFIX
@@ -181,10 +182,27 @@ async function publishMemberBoardPost({
     await titleInput.fill(memberTitle);
     const editorMode = await fillRichEditor(page, html, plainText);
 
+    const rawAttachmentPaths = (Array.isArray(attachments) ? attachments : [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    const attachmentPaths = [...new Set(rawAttachmentPaths.map((item) => path.resolve(item)))];
+    if (attachmentPaths.length !== rawAttachmentPaths.length
+      || attachmentPaths.some((item) => !fs.existsSync(item))) {
+      throw new Error("회원마당 등록에 사용할 이미지 파일 중 일부를 찾지 못했습니다.");
+    }
     const fileInput = page.locator('input[type="file"]').first();
-    if (attachments.length && await fileInput.count().catch(() => 0)) {
-      await fileInput.setInputFiles(attachments.map((item) => path.resolve(item)));
-    } else if (attachments.length) {
+    if (attachmentPaths.length && await fileInput.count().catch(() => 0)) {
+      const supportsMultiple = await fileInput.getAttribute("multiple").catch(() => null);
+      if (attachmentPaths.length > 1 && supportsMultiple === null) {
+        throw new Error("회원마당 첨부 입력칸이 여러 이미지 업로드를 지원하지 않습니다. 이미지 누락 방지를 위해 등록을 중단했습니다.");
+      }
+      await fileInput.setInputFiles(supportsMultiple === null ? attachmentPaths[0] : attachmentPaths);
+      const selectedCount = await fileInput.evaluate((input) => input.files?.length || 0).catch(() => 0);
+      if (selectedCount && selectedCount < attachmentPaths.length) {
+        throw new Error(`회원마당 이미지 첨부 확인 실패: ${selectedCount}/${attachmentPaths.length}개만 선택되었습니다.`);
+      }
+      log(`회원마당 이미지 첨부를 준비했습니다: ${attachmentPaths.length}개`, "info");
+    } else if (attachmentPaths.length) {
       log("회원마당 첨부 입력칸을 찾지 못해 첨부 없이 등록을 중단합니다.", "warn");
       throw new Error("회원마당 첨부파일 입력칸을 찾지 못했습니다.");
     }
@@ -224,6 +242,7 @@ async function publishMemberBoardPost({
       title: memberTitle,
       url: page.url(),
       editorMode,
+      attachmentCount: attachmentPaths.length,
       dialogMessage
     };
   } finally {

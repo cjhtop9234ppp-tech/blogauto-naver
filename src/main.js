@@ -52,6 +52,7 @@ const {
 } = require("./lib/dailyWorkflow");
 const { crawlMemberBoard, crawlNaverStylePosts } = require("./lib/memberBoardCrawler");
 const { publishMemberBoardPost } = require("./lib/memberBoardPublisher");
+const { collectMemberBoardAttachments } = require("./lib/memberBoardAssets");
 const {
   readSchedulerStatus,
   registerWindowsScheduler,
@@ -3271,10 +3272,36 @@ async function runRandomDailyResearch({ accountId = "", date = localDateKey(), r
       safeLog("daily-random", `[${item.slot}/9] 웹 검색 기반 최종 글 작성이 완료되었습니다. 온새카 등록을 시작합니다.`);
     }
 
+    const memberBoardAttachments = collectMemberBoardAttachments({
+      runtimeRoot,
+      titleImagePath: item.draftTitleImagePath,
+      bodyImages: item.draftBodyImages || []
+    });
+    if (memberBoardAttachments.missing.length) {
+      const missingLabels = memberBoardAttachments.missing.map((entry) => entry.label).join(", ");
+      const error = new Error(`온새카 등록 전 이미지 파일을 확인하지 못했습니다: ${missingLabels}`);
+      error.failurePhase = "member_board_image";
+      throw error;
+    }
+    const imagesExpected = settings.includeTitleImage !== false
+      || normalizeMaxBodyImages(settings.maxBodyImages) > 0;
+    if (imagesExpected && !memberBoardAttachments.paths.length) {
+      const error = new Error("온새카 등록 전 생성된 이미지가 없습니다. 이미지 생성 결과를 확인한 뒤 다시 시도하세요.");
+      error.failurePhase = "member_board_image";
+      throw error;
+    }
+    if (memberBoardAttachments.paths.length) {
+      safeLog(
+        "daily-random-publish",
+        `[${item.slot}/9] 온새카 등록에 이미지 ${memberBoardAttachments.paths.length}개를 전달합니다.`,
+        "info"
+      );
+    }
     const memberResult = await publishMemberBoardPost({
       browserProfileDir: getAccountProfileDir(runtimeRoot, account),
       title: item.draftTitle || item.topic,
       article: item.draftBody,
+      attachments: memberBoardAttachments.paths,
       log: (message, level) => safeLog("daily-random-publish", `[${item.slot}/9] ${message}`, level)
     });
     Object.assign(item, {

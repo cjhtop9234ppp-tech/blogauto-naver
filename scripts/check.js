@@ -38,6 +38,35 @@ const { normalizeMaxBodyImages, readSettings } = require(path.join(root, "src", 
 const { readAccountStore } = require(path.join(root, "src", "lib", "accountStore"));
 const { _private: imageContractPrivate } = require(path.join(root, "src", "lib", "codexRunner"));
 const { createRandomResearchPlan } = require(path.join(root, "src", "lib", "dailyWorkflow"));
+const { collectMemberBoardAttachments } = require(path.join(root, "src", "lib", "memberBoardAssets"));
+
+const memberBoardAssetsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blogauto-member-board-assets-"));
+try {
+  const titleImage = path.join(memberBoardAssetsRoot, "title.png");
+  const bodyImage = path.join(memberBoardAssetsRoot, "body-1.jpg");
+  fs.writeFileSync(titleImage, "test-image");
+  fs.writeFileSync(bodyImage, "test-image");
+  const collected = collectMemberBoardAttachments({
+    runtimeRoot: memberBoardAssetsRoot,
+    titleImagePath: titleImage,
+    bodyImages: [{ sequence: 1, path: bodyImage }, { sequence: 2, path: bodyImage }]
+  });
+  if (collected.paths.length !== 2 || collected.missing.length !== 0 || collected.requestedCount !== 3) {
+    failed = true;
+    console.error("src/lib/memberBoardAssets.js: generated member-board image paths were not collected safely");
+  }
+  const missing = collectMemberBoardAttachments({
+    runtimeRoot: memberBoardAssetsRoot,
+    titleImagePath: titleImage,
+    bodyImages: [{ sequence: 1, path: path.join(memberBoardAssetsRoot, "missing.png") }]
+  });
+  if (missing.missing.length !== 1 || missing.paths.length !== 1) {
+    failed = true;
+    console.error("src/lib/memberBoardAssets.js: missing member-board image paths must be reported");
+  }
+} finally {
+  fs.rmSync(memberBoardAssetsRoot, { recursive: true, force: true });
+}
 
 const manualLoginMigrationRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blogauto-manual-login-"));
 try {
