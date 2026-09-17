@@ -452,6 +452,10 @@ const sourceFiles = {
     relative: "src/lib/recoveryPlaybook.js",
     content: readSource("src", "lib", "recoveryPlaybook.js")
   },
+  memberBoardPublisher: {
+    relative: "src/lib/memberBoardPublisher.js",
+    content: readSource("src", "lib", "memberBoardPublisher.js")
+  },
   naverPublisher: {
     relative: "src/lib/naverPublisher.js",
     content: readSource("src", "lib", "naverPublisher.js")
@@ -2404,7 +2408,7 @@ const publishSelectedHistoryMarkerIndex = sourceFiles.rendererApp.content.indexO
 const publishSelectedHistoryBlock = publishSelectedHistoryMarkerIndex === -1
   ? null
   : { content: sourceFiles.rendererApp.content.slice(publishSelectedHistoryMarkerIndex) };
-if (
+ if (
   !sourceFiles.main.content.includes("function writeJobCheckpoint")
   || !sourceFiles.main.content.includes("function readJobResumeState")
   || !sourceFiles.main.content.includes("function readFirstJsonObject")
@@ -2419,7 +2423,15 @@ if (
 ) {
   failed = true;
   console.error("src/main.js: resumable jobs must persist phase checkpoints and expose the resume IPC");
-}
+ }
+assertCondition(
+  sourceFiles.main.content.includes("이미지는 건너뛰고 제목·본문만 등록합니다.")
+    && sourceFiles.main.content.includes("memberBoardAttachmentMode")
+    && sourceFiles.memberBoardPublisher.content.includes("첨부 입력칸이 여러 이미지 업로드를 지원하지 않습니다.")
+    && sourceFiles.memberBoardPublisher.content.includes("회원마당 텍스트 전용 등록 모드로 진행합니다.")
+    && !sourceFiles.memberBoardPublisher.content.includes("이미지 누락 방지를 위해 등록을 중단했습니다."),
+  "member-board publishing must fall back to text-only registration when image upload is unavailable"
+);
 {
   const startJobIndex = sourceFiles.main.content.indexOf("async function startJob");
   const resumeStateIndex = sourceFiles.main.content.indexOf("const resumeState = requestedResumeJobId", startJobIndex);

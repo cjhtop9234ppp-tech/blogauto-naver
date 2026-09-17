@@ -190,21 +190,38 @@ async function publishMemberBoardPost({
       || attachmentPaths.some((item) => !fs.existsSync(item))) {
       throw new Error("회원마당 등록에 사용할 이미지 파일 중 일부를 찾지 못했습니다.");
     }
+    let uploadedAttachmentCount = 0;
+    let attachmentFallbackReason = "";
     const fileInput = page.locator('input[type="file"]').first();
     if (attachmentPaths.length && await fileInput.count().catch(() => 0)) {
       const supportsMultiple = await fileInput.getAttribute("multiple").catch(() => null);
       if (attachmentPaths.length > 1 && supportsMultiple === null) {
-        throw new Error("회원마당 첨부 입력칸이 여러 이미지 업로드를 지원하지 않습니다. 이미지 누락 방지를 위해 등록을 중단했습니다.");
+        attachmentFallbackReason = "첨부 입력칸이 여러 이미지 업로드를 지원하지 않습니다.";
+        log(`${attachmentFallbackReason} 이미지는 건너뛰고 제목·본문만 등록합니다.`, "warn");
+      } else {
+        try {
+          await fileInput.setInputFiles(supportsMultiple === null ? attachmentPaths[0] : attachmentPaths);
+          const selectedCount = await fileInput.evaluate((input) => input.files?.length || 0).catch(() => 0);
+          if (selectedCount === attachmentPaths.length) {
+            uploadedAttachmentCount = selectedCount;
+            log(`회원마당 이미지 첨부를 준비했습니다: ${uploadedAttachmentCount}개`, "info");
+          } else {
+            attachmentFallbackReason = `이미지 첨부 확인 결과 ${selectedCount}/${attachmentPaths.length}개만 선택되었습니다.`;
+            await fileInput.setInputFiles([]).catch(() => {});
+            log(`${attachmentFallbackReason} 이미지는 건너뛰고 제목·본문만 등록합니다.`, "warn");
+          }
+        } catch (error) {
+          attachmentFallbackReason = `이미지 업로드 중 오류가 발생했습니다: ${error.message || error}`;
+          await fileInput.setInputFiles([]).catch(() => {});
+          log(`${attachmentFallbackReason} 이미지는 건너뛰고 제목·본문만 등록합니다.`, "warn");
+        }
       }
-      await fileInput.setInputFiles(supportsMultiple === null ? attachmentPaths[0] : attachmentPaths);
-      const selectedCount = await fileInput.evaluate((input) => input.files?.length || 0).catch(() => 0);
-      if (selectedCount && selectedCount < attachmentPaths.length) {
-        throw new Error(`회원마당 이미지 첨부 확인 실패: ${selectedCount}/${attachmentPaths.length}개만 선택되었습니다.`);
-      }
-      log(`회원마당 이미지 첨부를 준비했습니다: ${attachmentPaths.length}개`, "info");
     } else if (attachmentPaths.length) {
-      log("회원마당 첨부 입력칸을 찾지 못해 첨부 없이 등록을 중단합니다.", "warn");
-      throw new Error("회원마당 첨부파일 입력칸을 찾지 못했습니다.");
+      attachmentFallbackReason = "회원마당 첨부 입력칸을 찾지 못했습니다.";
+      log(`${attachmentFallbackReason} 이미지는 건너뛰고 제목·본문만 등록합니다.`, "warn");
+    }
+    if (!uploadedAttachmentCount && (attachmentPaths.length || attachmentFallbackReason)) {
+      log("회원마당 텍스트 전용 등록 모드로 진행합니다.", "info");
     }
 
     const registerButton = page.locator("button").filter({ hasText: /^\s*등록\s*$/ }).first();
@@ -242,7 +259,9 @@ async function publishMemberBoardPost({
       title: memberTitle,
       url: page.url(),
       editorMode,
-      attachmentCount: attachmentPaths.length,
+      attachmentCount: uploadedAttachmentCount,
+      attachmentMode: uploadedAttachmentCount ? "images" : "text-only",
+      attachmentFallbackReason,
       dialogMessage
     };
   } finally {

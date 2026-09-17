@@ -3279,16 +3279,20 @@ async function runRandomDailyResearch({ accountId = "", date = localDateKey(), r
     });
     if (memberBoardAttachments.missing.length) {
       const missingLabels = memberBoardAttachments.missing.map((entry) => entry.label).join(", ");
-      const error = new Error(`온새카 등록 전 이미지 파일을 확인하지 못했습니다: ${missingLabels}`);
-      error.failurePhase = "member_board_image";
-      throw error;
+      safeLog(
+        "daily-random-publish",
+        `[${item.slot}/9] 온새카 등록 전 이미지 파일을 확인하지 못했습니다: ${missingLabels}. 이미지는 건너뛰고 제목·본문만 등록합니다.`,
+        "warn"
+      );
     }
     const imagesExpected = settings.includeTitleImage !== false
       || normalizeMaxBodyImages(settings.maxBodyImages) > 0;
     if (imagesExpected && !memberBoardAttachments.paths.length) {
-      const error = new Error("온새카 등록 전 생성된 이미지가 없습니다. 이미지 생성 결과를 확인한 뒤 다시 시도하세요.");
-      error.failurePhase = "member_board_image";
-      throw error;
+      safeLog(
+        "daily-random-publish",
+        `[${item.slot}/9] 온새카 등록용 이미지를 사용할 수 없습니다. 이미지 없이 제목·본문만 등록합니다.`,
+        "warn"
+      );
     }
     if (memberBoardAttachments.paths.length) {
       safeLog(
@@ -3309,6 +3313,9 @@ async function runRandomDailyResearch({ accountId = "", date = localDateKey(), r
       memberBoardStatus: "발행완료",
       memberBoardTitle: memberResult.title || "",
       memberBoardUrl: memberResult.url || "",
+      memberBoardAttachmentCount: Number(memberResult.attachmentCount || 0),
+      memberBoardAttachmentMode: memberResult.attachmentMode || "text-only",
+      memberBoardAttachmentFailureReason: memberResult.attachmentFallbackReason || "",
       memberBoardFailureReason: "",
       publishedAt: new Date().toISOString(),
       failureReason: ""
