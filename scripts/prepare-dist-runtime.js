@@ -4,9 +4,10 @@ const { DEFAULT_SETTINGS } = require("../src/lib/settings");
 const { DEFAULT_ACCOUNT_STORE } = require("../src/lib/accountStore");
 
 const root = path.resolve(__dirname, "..");
+const outputDirectory = String(process.env.BLOGAUTO_DIST_DIR || "dist").trim() || "dist";
 const targets = [
-  path.join(root, "dist", "runtime"),
-  path.join(root, "dist", "win-unpacked", "runtime")
+  path.join(root, outputDirectory, "runtime"),
+  path.join(root, outputDirectory, "win-unpacked", "runtime")
 ];
 
 for (const runtimeRoot of targets) {

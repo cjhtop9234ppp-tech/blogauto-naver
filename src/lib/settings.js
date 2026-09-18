@@ -47,6 +47,7 @@ const DEFAULT_SETTINGS = {
   titleImageAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
   bodyImageAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
   maxBodyImages: 10,
+  publishPolicy: "publish_priority_image_required",
   breakSentencesInBody: true,
   agentModels: {
     main: "high",
@@ -85,6 +86,9 @@ function normalizeSettings(settings) {
   normalized.titleImageAspectRatio = normalizeImageAspectRatio(normalized.titleImageAspectRatio || normalized.imageAspectRatio);
   normalized.bodyImageAspectRatio = normalizeImageAspectRatio(normalized.bodyImageAspectRatio || normalized.imageAspectRatio);
   normalized.maxBodyImages = normalizeMaxBodyImages(normalized.maxBodyImages);
+  normalized.publishPolicy = normalized.publishPolicy === "strict_review"
+    ? "strict_review"
+    : "publish_priority_image_required";
   normalized.codexModel = normalizeCodexModel(normalized.codexModel);
   normalized.sourceMode = normalized.sourceMode === "file_upload" ? "file_upload" : "research";
   normalized.sourceFilePaths = [...new Set((Array.isArray(normalized.sourceFilePaths) ? normalized.sourceFilePaths : [])

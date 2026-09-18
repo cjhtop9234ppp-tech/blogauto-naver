@@ -1848,10 +1848,17 @@ async function startJob(form = {}) {
   const publishPrivate = publishVisibility !== "public";
   const publishScheduleMode = String(form.publishScheduleMode || "now");
   const reserveAfterHours = Number(form.reserveAfterHours || 0);
-  const includeTitleImage = form.includeTitleImage !== false;
+  let includeTitleImage = form.includeTitleImage !== false;
   const titleImageAspectRatio = normalizeImageAspectRatio(form.titleImageAspectRatio || settings.titleImageAspectRatio || form.imageAspectRatio || settings.imageAspectRatio);
   const bodyImageAspectRatio = normalizeImageAspectRatio(form.bodyImageAspectRatio || settings.bodyImageAspectRatio || form.imageAspectRatio || settings.imageAspectRatio);
   const maxBodyImages = normalizeMaxBodyImages(form.maxBodyImages);
+  const publishPolicy = form.publishPolicy === "strict_review" || settings.publishPolicy === "strict_review" && form.publishPolicy === undefined
+    ? "strict_review"
+    : "publish_priority_image_required";
+  if (publishPolicy === "publish_priority_image_required" && !includeTitleImage && maxBodyImages === 0) {
+    includeTitleImage = true;
+    safeLog(jobId, "발행 우선·이미지 필수 모드가 켜져 있어 최소 1장의 타이틀 이미지를 생성합니다.", "info");
+  }
   const breakSentencesInBody = form.breakSentencesInBody !== false;
   const agentModels = form.agentModels || settings.agentModels || {};
   const shouldPublish = form.publishAfterGenerate === true || (sourceMode !== "file_upload" && form.topicMode === "auto");
@@ -2286,7 +2293,8 @@ async function startJob(form = {}) {
         titleImageAspectRatio,
         bodyImageAspectRatio,
         maxBodyImages,
-        requireImageAssets: form.requireImageAssets === true,
+        publishPolicy,
+        requireImageAssets: form.requireImageAssets === true || publishPolicy === "publish_priority_image_required",
         sourceQuality: sourceMode === "file_upload"
           ? { status: "file_upload", reason: "사용자가 업로드한 원문과 표를 사실 근거로 사용합니다." }
           : { status: "not_requested" },
@@ -3241,6 +3249,7 @@ async function runRandomDailyResearch({ accountId = "", date = localDateKey(), r
          titleImageAspectRatio: settings.titleImageAspectRatio,
          bodyImageAspectRatio: settings.bodyImageAspectRatio,
          maxBodyImages: settings.maxBodyImages,
+         publishPolicy: settings.publishPolicy,
          requireImageAssets: true,
          breakSentencesInBody: settings.breakSentencesInBody !== false,
         codexModel: settings.codexModel,

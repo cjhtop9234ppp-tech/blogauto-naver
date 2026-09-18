@@ -2142,6 +2142,7 @@ function collectForm(target = {}) {
     titleImageAspectRatio: normalizeImageAspectRatio($("#titleImageAspectRatio").value),
     bodyImageAspectRatio: normalizeImageAspectRatio($("#bodyImageAspectRatio").value),
     maxBodyImages: Number($("#maxBodyImages").value),
+    publishPolicy: $("#publishPriorityImageRequired")?.checked === false ? "strict_review" : "publish_priority_image_required",
     breakSentencesInBody: $("#breakSentencesInBody").checked,
     agentModels: currentAgentModels(),
     excludedKeywordLanes: Array.isArray(target.excludedKeywordLanes) ? target.excludedKeywordLanes : [],
@@ -2172,6 +2173,7 @@ function applySettings(settings) {
   if ($("#publishToTistoryAfterNaver")) $("#publishToTistoryAfterNaver").checked = settings.publishToTistoryAfterNaver === true;
   state.tistorySessionStatus = settings.tistorySessionStatus || "unknown";
   $("#includeTitleImage").checked = settings.includeTitleImage !== false;
+  if ($("#publishPriorityImageRequired")) $("#publishPriorityImageRequired").checked = settings.publishPolicy !== "strict_review";
   $("#titleImageAspectRatio").value = normalizeImageAspectRatio(settings.titleImageAspectRatio || settings.imageAspectRatio);
   $("#bodyImageAspectRatio").value = normalizeImageAspectRatio(settings.bodyImageAspectRatio || settings.imageAspectRatio);
   $("#breakSentencesInBody").checked = settings.breakSentencesInBody !== false;
@@ -2210,6 +2212,7 @@ async function saveSettingsNow() {
     titleImageAspectRatio: form.titleImageAspectRatio,
     bodyImageAspectRatio: form.bodyImageAspectRatio,
     maxBodyImages: form.maxBodyImages,
+    publishPolicy: form.publishPolicy,
     breakSentencesInBody: form.breakSentencesInBody,
     codexModel: form.codexModel,
     agentModels: form.agentModels

@@ -39,6 +39,7 @@ const { readAccountStore } = require(path.join(root, "src", "lib", "accountStore
 const { _private: imageContractPrivate } = require(path.join(root, "src", "lib", "codexRunner"));
 const { createRandomResearchPlan } = require(path.join(root, "src", "lib", "dailyWorkflow"));
 const { collectMemberBoardAttachments } = require(path.join(root, "src", "lib", "memberBoardAssets"));
+const { createFallbackImageAssets } = require(path.join(root, "src", "lib", "fallbackImage"));
 
 const memberBoardAssetsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blogauto-member-board-assets-"));
 try {
@@ -66,6 +67,25 @@ try {
   }
 } finally {
   fs.rmSync(memberBoardAssetsRoot, { recursive: true, force: true });
+}
+
+const fallbackImageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blogauto-fallback-image-"));
+try {
+  const generated = createFallbackImageAssets({
+    runtimeRoot: fallbackImageRoot,
+    topic: "대체 이미지 검증",
+    title: "대체 이미지 검증 제목",
+    includeTitleImage: true,
+    maxBodyImages: 1,
+    bodyImageRequests: [{ sequence: 1, sectionHeading: "본문 핵심" }]
+  });
+  const outputs = [generated.titleImagePath, ...generated.bodyImages.map((item) => item.path)];
+  if (outputs.length !== 2 || outputs.some((filePath) => !fs.existsSync(filePath) || !fs.readFileSync(filePath).subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])))) {
+    failed = true;
+    console.error("src/lib/fallbackImage.js: local fallback PNG assets were not created safely");
+  }
+} finally {
+  fs.rmSync(fallbackImageRoot, { recursive: true, force: true });
 }
 
 const manualLoginMigrationRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blogauto-manual-login-"));

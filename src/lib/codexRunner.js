@@ -3,6 +3,7 @@ const path = require("node:path");
 const os = require("node:os");
 const { spawn } = require("node:child_process");
 const { normalizeMaxBodyImages } = require("./settings");
+const { createFallbackImageAssets } = require("./fallbackImage");
 
 const DEFAULT_AGENT_MODELS = {
   main: "high",
@@ -36,6 +37,10 @@ const AGENT_DISPLAY_NAMES = {
   image: "Image Worker",
   imageStyle: "Image Style Agent"
 };
+
+function isPublishPriorityImageRequired(options = {}) {
+  return String(options.publishPolicy || "").trim().toLowerCase() === "publish_priority_image_required";
+}
 
 function normalizeAgentModels(models = {}) {
   return Object.fromEntries(Object.entries(DEFAULT_AGENT_MODELS).map(([agent, fallback]) => {
@@ -2181,6 +2186,54 @@ function buildSafeGeneralTopicFallback(options = {}, previousResult = {}) {
   };
 }
 
+function buildPublishPriorityResearchFallback(options = {}, previousResult = {}) {
+  if (!isPublishPriorityImageRequired(options)) return null;
+  const topic = String(options.topic || options.keyword || options.category || "").replace(/\s+/g, " ").trim();
+  if (!topic) return null;
+  const previousTitle = String(previousResult?.finalTitle || previousResult?.selectedTitle || "").replace(/\s+/g, " ").trim();
+  const finalTitle = previousTitle || `${topic}를 이해하기 위한 기본 정보와 확인할 점`;
+  const warning = summarizeAgentReason([
+    previousResult?.failureReason,
+    previousResult?.notes,
+    "발행 우선 모드로 전환했습니다. 확인되지 않은 날짜·수치·법률·기업 발표는 본문에 추가하지 않습니다."
+  ], "검색 또는 검수 보류로 안전한 일반 설명 모드로 전환했습니다.");
+  return {
+    ...previousResult,
+    status: "PASS",
+    failureReason: "",
+    finalTitle,
+    selectedTitle: finalTitle,
+    topicThesis: `${topic}에 관한 확인 가능한 일반 원리와 독자가 점검할 기준을 설명합니다. 확인되지 않은 개별 사실은 단정하지 않습니다.`,
+    currentBridgeRequired: false,
+    currentBridgeSatisfied: true,
+    factBased: false,
+    publishPriorityFallback: true,
+    searchNeed: "skip",
+    coreQuestions: [
+      `${topic}을 이해할 때 먼저 구분할 기본 개념은 무엇인가?`,
+      "독자가 실제로 확인해야 할 조건과 자료는 무엇인가?",
+      "확인되지 않은 사실을 단정하지 않으려면 무엇을 피해야 하는가?"
+    ],
+    mustCover: [
+      "주제의 일반적인 의미와 독자 관점의 핵심 흐름",
+      "실무 또는 일상에서 확인할 체크포인트",
+      "확인되지 않은 개별 사실을 일반화하지 않는 주의사항"
+    ],
+    avoidDirections: compactTextList([
+      previousResult?.avoidDirections,
+      "확인되지 않은 날짜, 수치, 법안 번호, 시행 상태, 기업 발표를 새로 만들거나 단정하지 않기",
+      "검색 실패·검수 과정 자체를 본문 내용으로 쓰지 않기"
+    ]),
+    confirmedFacts: Array.isArray(previousResult?.confirmedFacts) ? previousResult.confirmedFacts.slice(0, 8) : [],
+    uncertainItems: compactTextList([
+      previousResult?.uncertainItems,
+      "개별 사건의 날짜·수치·공식 시행 여부는 독자가 원문에서 별도 확인해야 함"
+    ]),
+    writerBrief: `${topic}을 주제로 한 읽기 쉬운 정보형 글을 작성합니다. 실제로 확인된 자료 외의 날짜·수치·법률·기관·기업 행동은 추가하지 말고, 일반적 원리·점검 기준·주의사항을 독자에게 직접 설명합니다. 검색·검수 실패 과정을 본문에 쓰지 않습니다.`,
+    notes: compactTextList([previousResult?.notes, warning])
+  };
+}
+
 function currentBridgeIssueReason(researchResult) {
   if (researchResult?.currentBridgeRequired !== true) return "";
   if (researchResult?.currentBridgeSatisfied === true) return "";
@@ -3216,7 +3269,7 @@ async function runCodexGeneration(options, log = () => {}) {
     needsSearch = ["light", "normal", "strict"].includes(requestedSearchNeed);
   }
 
-  const safeGeneralTopicFallback = buildSafeGeneralTopicFallback(effectiveOptions, researchResult);
+  let safeGeneralTopicFallback = buildSafeGeneralTopicFallback(effectiveOptions, researchResult);
   if (safeGeneralTopicFallback) {
     researchResult = safeGeneralTopicFallback;
     researchStatus = "PASS";
@@ -3231,7 +3284,29 @@ async function runCodexGeneration(options, log = () => {}) {
     });
   }
 
-  const authoritySourceIssue = safeGeneralTopicFallback
+  let publishPriorityFallback = false;
+  const researchNeedsPublishPriorityFallback = ["REVISION", "BLOCK", "FAILED"].includes(researchStatus)
+    || (needsSearch && effectiveOptions.searchResults.length === 0)
+    || Boolean(authoritySourceQualityIssueReason(effectiveOptions.sourceQuality));
+  if (!safeGeneralTopicFallback && researchNeedsPublishPriorityFallback && isPublishPriorityImageRequired(effectiveOptions)) {
+    const fallback = buildPublishPriorityResearchFallback(effectiveOptions, researchResult);
+    if (fallback) {
+      researchResult = fallback;
+      researchStatus = "PASS";
+      requestedSearchNeed = "skip";
+      needsSearch = false;
+      publishPriorityFallback = true;
+      log("발행 우선 모드: 검색·제목 보류를 안전한 일반 설명으로 전환합니다. 확인되지 않은 개별 사실은 본문에 추가하지 않습니다.", "warn", "research");
+      if (typeof options.onResearchTitle === "function") options.onResearchTitle(researchResult);
+      checkpoint({
+        resumeFrom: "writer",
+        lastCompletedPhase: "research",
+        phaseDetail: "발행 우선용 Research/Title 결과 저장 완료"
+      });
+    }
+  }
+
+  const authoritySourceIssue = safeGeneralTopicFallback || publishPriorityFallback
     ? ""
     : authoritySourceQualityIssueReason(effectiveOptions.sourceQuality);
   if (authoritySourceIssue) {
@@ -3423,7 +3498,12 @@ async function runCodexGeneration(options, log = () => {}) {
 
   const initialContractRefinement = resumeState?.researchTitleResult?.writerContract
     ? { ok: true, result: null }
-    : await refineWriterContract();
+    : isPublishPriorityImageRequired(effectiveOptions)
+      ? { ok: true, result: null, localContract: true }
+      : await refineWriterContract();
+  if (initialContractRefinement.localContract) {
+    log("발행 우선 모드: Main Agent 계약 정리 실패가 본문 생성을 막지 않도록 안전한 기본 Writer Contract를 사용합니다.", "warn", "main");
+  }
   if (!initialContractRefinement.ok) {
     return {
       status: "failed",
@@ -3537,7 +3617,21 @@ async function runCodexGeneration(options, log = () => {}) {
 
     const writerIssueReason = writerOutputIssueReason(writerResult)
       || writerImageContractIssueReason(writerResult, effectiveOptions);
-    if (writerIssueReason) {
+    const publishPriorityWriterDraft = isPublishPriorityImageRequired(effectiveOptions)
+      && String(writerResult?.title || finalTitle || "").trim()
+      && String(writerResult?.article || "").trim().length >= 200;
+    if (writerIssueReason && publishPriorityWriterDraft) {
+      writerResult = {
+        ...writerResult,
+        status: "success",
+        notes: compactTextList([
+          writerResult?.notes,
+          `발행 우선 모드 경고: ${writerIssueReason}`
+        ])
+      };
+      log(`발행 우선 모드: Writer 보류를 경고로 기록하고 저장된 본문을 사용합니다: ${writerIssueReason}`, "warn", "writer");
+    }
+    if (writerIssueReason && !publishPriorityWriterDraft) {
       log(`Writer Agent 작성 실패: ${writerIssueReason}`, "warn", "writer");
       const writerSourceIssue = isSourceInsufficientWriterIssue(writerIssueReason, writerResult, researchResult);
       if (writerSourceIssue && !writerSupplementSearchUsed && typeof options.onSearchNeeded === "function") {
@@ -3843,6 +3937,28 @@ async function runCodexGeneration(options, log = () => {}) {
     const reviewReason = mainReviewPassIssue
       || String(mainReviewResult.failureReason || "").trim()
       || "Main Agent 최종 검수에서 발행 가능 기준을 통과하지 못했습니다.";
+    const hasUsableDraftForPublishPriority = Boolean(
+      String(finalTitle || writerResult?.title || "").trim()
+      && String(writerResult?.article || "").trim().length >= 200
+    );
+    if (isPublishPriorityImageRequired(effectiveOptions) && hasUsableDraftForPublishPriority) {
+      mainReviewResult = {
+        ...mainReviewResult,
+        status: "PUBLISH_WITH_WARNING",
+        publishWithWarning: true,
+        warningReason: reviewReason
+      };
+      mainReviewStatus = "PUBLISH_WITH_WARNING";
+      checkpoint({
+        resumeFrom: "image",
+        failurePhase: "",
+        lastCompletedPhase: "main_review",
+        attempt,
+        phaseDetail: "발행 우선 모드: Main 검수 경고를 기록하고 이미지 단계로 진행"
+      });
+      log(`발행 우선 모드: Main Agent 보류를 경고로 기록하고 이미지 생성·네이버 발행을 계속합니다: ${reviewReason}`, "warn", "main");
+      break;
+    }
     return {
       status: "failed",
       failurePhase: "main_review",
@@ -3944,7 +4060,38 @@ async function runCodexGeneration(options, log = () => {}) {
       }
     }
     if (imageContractFailure) {
-      if (effectiveOptions.requireImageAssets === true) {
+      if (isPublishPriorityImageRequired(effectiveOptions)) {
+        try {
+          const fallbackImages = createFallbackImageAssets({
+            runtimeRoot: effectiveOptions.runtimeRoot,
+            topic: finalTitle || effectiveOptions.topic,
+            title: finalWriterResult.title || finalTitle,
+            includeTitleImage: effectiveOptions.includeTitleImage !== false,
+            maxBodyImages: bodyImageLimit,
+            bodyImageRequests: Array.isArray(finalWriterResult.bodyImages) ? finalWriterResult.bodyImages : []
+          });
+          finalWriterResult = {
+            ...finalWriterResult,
+            ...fallbackImages,
+            imageWarnings: [
+              ...(Array.isArray(finalWriterResult.imageWarnings) ? finalWriterResult.imageWarnings : []),
+              `Image Worker 결과를 확보하지 못해 로컬 대체 PNG 이미지로 계속합니다: ${imageContractFailure}`
+            ]
+          };
+          checkpoint({
+            resumeFrom: "",
+            failurePhase: "",
+            lastCompletedPhase: "image",
+            phaseDetail: "발행 우선 모드: 로컬 대체 PNG 이미지 생성 완료"
+          });
+          log("발행 우선 모드: Image Worker 실패 후 실제 로컬 PNG 대체 이미지를 생성했습니다. 네이버 발행은 이미지와 함께 계속합니다.", "warn", "main");
+          imageContractFailure = "";
+        } catch (fallbackError) {
+          imageContractFailure = `${imageContractFailure} / 로컬 대체 이미지 생성 실패: ${fallbackError.message}`;
+          log(imageContractFailure, "error", "main");
+        }
+      }
+      if (imageContractFailure && effectiveOptions.requireImageAssets === true) {
         return {
           status: "failed",
           failurePhase: "image",
@@ -3960,16 +4107,18 @@ async function runCodexGeneration(options, log = () => {}) {
           tokenUsage: tokenUsageSnapshot()
         };
       }
-      log(`Image Worker를 완료하지 못했지만 PASS된 본문을 보존하고 이미지 없이 계속합니다: ${imageContractFailure}`, "warn", "main");
-      finalWriterResult = {
-        ...finalWriterResult,
-        titleImagePath: "",
-        bodyImages: [],
-        imageWarnings: [
-          ...(Array.isArray(finalWriterResult.imageWarnings) ? finalWriterResult.imageWarnings : []),
-          imageContractFailure
-        ]
-      };
+      if (imageContractFailure) {
+        log(`Image Worker를 완료하지 못했지만 PASS된 본문을 보존하고 이미지 없이 계속합니다: ${imageContractFailure}`, "warn", "main");
+        finalWriterResult = {
+          ...finalWriterResult,
+          titleImagePath: "",
+          bodyImages: [],
+          imageWarnings: [
+            ...(Array.isArray(finalWriterResult.imageWarnings) ? finalWriterResult.imageWarnings : []),
+            imageContractFailure
+          ]
+        };
+      }
     }
   }
 
@@ -4000,6 +4149,8 @@ module.exports = {
     articleSections,
     isSafeGeneralTopicFallbackEligible,
     buildSafeGeneralTopicFallback,
+    buildPublishPriorityResearchFallback,
+    isPublishPriorityImageRequired,
     safeGeneralFallbackBlockIsRewriteable,
     writerImageContractIssueReason,
     imageWorkerContractIssueReason,
