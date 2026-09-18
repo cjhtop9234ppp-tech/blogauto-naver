@@ -4,6 +4,7 @@ const {
   MEMBER_BOARD_WRITE_URL,
   MEMBER_BOARD_AUTO_TITLE_PREFIX
 } = require("./dailyWorkflow");
+const { launchPersistentContextWithRecovery } = require("./chromeProfileLauncher");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -161,7 +162,12 @@ async function publishMemberBoardPost({
   if (!plainText) throw new Error("회원마당 등록 본문이 없습니다.");
   const html = articleToHtml(plainText);
   const chromium = require("playwright-core").chromium;
-  const context = await chromium.launchPersistentContext(path.resolve(browserProfileDir), chromeLaunchOptions());
+  const context = await launchPersistentContextWithRecovery(
+    chromium,
+    path.resolve(browserProfileDir),
+    chromeLaunchOptions(),
+    { label: "회원마당 발행용 Chrome", log }
+  );
   let page = context.pages()[0] || await context.newPage();
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });

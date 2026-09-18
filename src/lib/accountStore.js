@@ -193,6 +193,11 @@ function getAccountProfileDir(runtimeRoot, account) {
   return path.join(runtimeRoot, "browser-profiles", segment);
 }
 
+function getMemberBoardProfileDir(runtimeRoot, account) {
+  const segment = safeProfileSegment(`${account?.naverId || account?.blogId || "member-board"}_${account?.id || "profile"}`);
+  return path.join(runtimeRoot, "member-board-profiles", segment);
+}
+
 module.exports = {
   DEFAULT_ACCOUNT_STORE,
   ensureAccountStoreFile,
@@ -200,5 +205,6 @@ module.exports = {
   writeAccountStore,
   updateAccountSession,
   getAccountProfileDir,
+  getMemberBoardProfileDir,
   getAccountStorePath
 };

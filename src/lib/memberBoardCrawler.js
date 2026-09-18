@@ -5,6 +5,7 @@ const {
   MEMBER_BOARD_AUTO_TITLE_PREFIX,
   normalizeMemberPost
 } = require("./dailyWorkflow");
+const { launchPersistentContextWithRecovery } = require("./chromeProfileLauncher");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -253,7 +254,12 @@ async function gotoBoardPage(page, url, pageNumber) {
 async function crawlBoard({ browserProfileDir, url = MEMBER_BOARD_URL, maxPages = 17, maxPosts = 329, log = () => {} } = {}) {
   if (!browserProfileDir) throw new Error("Chrome 프로필 경로가 필요합니다.");
   const chromium = await loadChromium();
-  const context = await chromium.launchPersistentContext(path.resolve(browserProfileDir), chromeLaunchOptions());
+  const context = await launchPersistentContextWithRecovery(
+    chromium,
+    path.resolve(browserProfileDir),
+    chromeLaunchOptions(),
+    { label: "회원마당 수집용 Chrome", log }
+  );
   let listPage = context.pages()[0] || await context.newPage();
   const isMemberBoard = isLegacyMemberBoardUrl(url);
   let detailPage = isMemberBoard ? null : await context.newPage();
@@ -329,7 +335,12 @@ async function crawlBoard({ browserProfileDir, url = MEMBER_BOARD_URL, maxPages 
 async function crawlNaverStylePosts(options = {}) {
   if (!options.browserProfileDir) throw new Error("Chrome 프로필 경로가 필요합니다.");
   const chromium = await loadChromium();
-  const context = await chromium.launchPersistentContext(path.resolve(options.browserProfileDir), chromeLaunchOptions());
+  const context = await launchPersistentContextWithRecovery(
+    chromium,
+    path.resolve(options.browserProfileDir),
+    chromeLaunchOptions(),
+    { label: "네이버 스타일 수집용 Chrome", log: options.log }
+  );
   const page = context.pages()[0] || await context.newPage();
   try {
     await page.goto(NAVER_STYLE_URL, { waitUntil: "domcontentloaded", timeout: 45000 });

@@ -32,7 +32,8 @@ const {
   readAccountStore,
   writeAccountStore,
   updateAccountSession,
-  getAccountProfileDir
+  getAccountProfileDir,
+  getMemberBoardProfileDir
 } = require("./lib/accountStore");
 const {
   MEMBER_BOARD_URL,
@@ -53,6 +54,7 @@ const {
 } = require("./lib/dailyWorkflow");
 const { crawlMemberBoard, crawlNaverStylePosts } = require("./lib/memberBoardCrawler");
 const { publishMemberBoardPost } = require("./lib/memberBoardPublisher");
+const { launchPersistentContextWithRecovery } = require("./lib/chromeProfileLauncher");
 const { collectMemberBoardAttachments } = require("./lib/memberBoardAssets");
 const {
   readSchedulerStatus,
@@ -3078,7 +3080,13 @@ async function crawlDailyMemberBoard({ accountId = "", url = MEMBER_BOARD_URL } 
   let account = null;
   try {
     ({ account } = dailyAccount(runtimeRoot, accountId));
-    const browserProfileDir = getAccountProfileDir(runtimeRoot, account);
+    const browserProfileDir = getMemberBoardProfileDir(runtimeRoot, account);
+    if (memberBoardLoginContext && memberBoardLoginProfileDir === browserProfileDir) {
+      safeLog("daily-member-board", "앱이 열어 둔 회원마당 로그인 창을 수집용 Chrome과 충돌하지 않도록 닫습니다.", "info", "main");
+      await memberBoardLoginContext.close().catch(() => {});
+      memberBoardLoginContext = null;
+      memberBoardLoginProfileDir = "";
+    }
     const result = await crawlMemberBoard({
       browserProfileDir,
       url: String(url || MEMBER_BOARD_URL).trim() || MEMBER_BOARD_URL,
@@ -3116,8 +3124,15 @@ async function crawlDailyNaverStyle({ accountId = "" } = {}) {
   const runtimeRoot = getRuntimeRoot();
   ensureDailyWorkflowFiles(runtimeRoot);
   const { account } = dailyAccount(runtimeRoot, accountId);
+  const browserProfileDir = getAccountProfileDir(runtimeRoot, account);
+  if (memberBoardLoginContext && memberBoardLoginProfileDir === browserProfileDir) {
+    safeLog("daily-style", "앱이 열어 둔 회원마당 로그인 창을 수집용 Chrome과 충돌하지 않도록 닫습니다.", "info", "main");
+    await memberBoardLoginContext.close().catch(() => {});
+    memberBoardLoginContext = null;
+    memberBoardLoginProfileDir = "";
+  }
   const result = await crawlNaverStylePosts({
-    browserProfileDir: getAccountProfileDir(runtimeRoot, account),
+    browserProfileDir,
     log: (message, level) => safeLog("daily-style", message, level, "main")
   });
   const rules = writeStyleRules(runtimeRoot, extractStyleRules(result.posts || []));
@@ -3330,7 +3345,7 @@ async function runRandomDailyResearch({ accountId = "", date = localDateKey(), r
       );
     }
     const memberResult = await publishMemberBoardPost({
-      browserProfileDir: getAccountProfileDir(runtimeRoot, account),
+      browserProfileDir: getMemberBoardProfileDir(runtimeRoot, account),
       title: item.draftTitle || item.topic,
       article: item.draftBody,
       attachments: memberBoardAttachments.paths,
@@ -3648,7 +3663,7 @@ app.whenReady().then(() => {
   ipcMain.handle("daily:openMemberBoardWrite", async (_event, { accountId = "" } = {}) => {
     const runtimeRoot = getRuntimeRoot();
     const { account } = dailyAccount(runtimeRoot, accountId);
-    const browserProfileDir = getAccountProfileDir(runtimeRoot, account);
+    const browserProfileDir = getMemberBoardProfileDir(runtimeRoot, account);
     if (memberBoardLoginContext && memberBoardLoginProfileDir !== browserProfileDir) {
       await memberBoardLoginContext.close().catch(() => {});
       memberBoardLoginContext = null;
@@ -3656,12 +3671,12 @@ app.whenReady().then(() => {
     }
     if (!memberBoardLoginContext) {
       const chromium = require("playwright-core").chromium;
-      memberBoardLoginContext = await chromium.launchPersistentContext(path.resolve(browserProfileDir), {
+      memberBoardLoginContext = await launchPersistentContextWithRecovery(chromium, path.resolve(browserProfileDir), {
         channel: "chrome",
         headless: false,
         viewport: { width: 1440, height: 920 },
         args: ["--disable-blink-features=AutomationControlled", "--hide-crash-restore-bubble", "--disable-session-crashed-bubble", "--no-first-run"]
-      });
+      }, { label: "회원마당 로그인용 Chrome", log: (message, level) => safeLog("daily-member-board", message, level, "main") });
       memberBoardLoginProfileDir = browserProfileDir;
       const context = memberBoardLoginContext;
       context.on("close", () => {
@@ -3675,7 +3690,7 @@ app.whenReady().then(() => {
     await page.bringToFront().catch(() => {});
     await page.goto(MEMBER_BOARD_WRITE_URL, { waitUntil: "domcontentloaded", timeout: 45000 });
     safeLog("daily-member-board", `회원마당 글쓰기 로그인 페이지를 열었습니다: ${MEMBER_BOARD_WRITE_URL}`);
-    safeLog("daily-member-board", "로그인 창과 회원마당 수집기가 동일한 Chrome 프로필을 사용합니다.");
+    safeLog("daily-member-board", "로그인 창과 회원마당 수집기가 온새카 전용 Chrome 프로필을 공유합니다.");
     return { url: MEMBER_BOARD_WRITE_URL, profile: browserProfileDir };
   });
   ipcMain.handle("daily:closeMemberBoardWrite", async () => {
