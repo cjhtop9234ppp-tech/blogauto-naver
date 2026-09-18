@@ -17,6 +17,7 @@ const {
 } = require("./lib/recoveryPlaybook");
 const { parseFiles, normalizeSourceDocuments, SUPPORTED_EXTENSIONS } = require("./lib/fileParser");
 const { normalizeAgentResult, getPreviewImages, normalizeHistoryDraftAssets } = require("./lib/imageAssets");
+const { createFallbackImageAssets } = require("./lib/fallbackImage");
 const {
   publishToNaver,
   checkNaverSession,
@@ -608,6 +609,24 @@ async function publishHistoryDraft({ jobId = "", publishVisibility = "", publish
   const publishPrivate = visibility !== "public";
   const scheduleMode = String(publishScheduleMode || settings.publishScheduleMode || "now");
   const publishJobId = `${draft.jobId}-history-publish-${Date.now()}`;
+  const publishPriorityImageRequired = settings.publishPolicy !== "strict_review";
+  let titleImagePath = String(draft.titleImagePath || "").trim();
+  let bodyImages = Array.isArray(draft.bodyImages) ? draft.bodyImages : [];
+  const hasStoredImage = [titleImagePath, ...bodyImages.map((item) => item?.path)]
+    .some((filePath) => filePath && fs.existsSync(filePath));
+  if (publishPriorityImageRequired && !hasStoredImage) {
+    const fallbackImages = createFallbackImageAssets({
+      runtimeRoot,
+      topic: draft.title,
+      title: draft.title,
+      includeTitleImage: true,
+      maxBodyImages: 0,
+      bodyImageRequests: []
+    });
+    titleImagePath = fallbackImages.titleImagePath;
+    bodyImages = fallbackImages.bodyImages;
+    safeLog(publishJobId, "발행 우선·이미지 필수 모드: 이력 초안에 저장된 이미지가 없어 로컬 대체 PNG 1장을 생성했습니다.", "warn");
+  }
   activeJob = { id: publishJobId, cancelled: false };
   try {
     updateStatus(publishJobId, "publishing", "작업 이력의 초안을 네이버에 발행하는 중");
@@ -623,8 +642,8 @@ async function publishHistoryDraft({ jobId = "", publishVisibility = "", publish
       failOnLoginRequired: false,
       title: draft.title,
       article: draft.article,
-      titleImagePath: draft.titleImagePath,
-      bodyImages: draft.bodyImages,
+      titleImagePath,
+      bodyImages,
       breakSentencesInBody: settings.breakSentencesInBody !== false,
       tags: draft.tags,
       domNotes: settings.naverEditorDomNotes || "",
@@ -848,7 +867,7 @@ async function publishHistoryDrafts({ jobIds = [], expectedTitles = {}, publishV
       results.push({ jobId: selectedJobId, status: "success", title: result.title || "" });
     } catch (error) {
       results.push({ jobId: selectedJobId, status: "failed", reason: error.message });
-      break;
+      continue;
     }
   }
   const completed = results.filter((item) => item.status === "success").length;
